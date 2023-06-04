@@ -1,0 +1,60 @@
+-- Data is gun deaths by year, by county.
+source: gun_deaths is table('duckdb:gun_deaths_us_1999_2019.csv') {
+  measure: deaths is Deaths.sum()
+  measure: deaths_per_100k is avg(100000*Deaths/Population)  -- Avg each county/year, so each data point is counted equally.
+
+  query: by_year_line_chart is {
+    group_by: `year` is `Year`
+    aggregate: total_deaths is deaths
+  }
+
+  query: by_state_bar_chart is {
+    group_by: `state` is State_Name
+    aggregate: total_deaths is deaths
+  }
+
+  query: normalized_by_state_bar_chart is {
+    group_by: `state` is State_Name
+    aggregate: normalized_deaths is deaths_per_100k
+  }
+
+  query: by_year_state_dashboard is {
+    order_by: `year` desc
+    group_by: `year` is `Year`
+    aggregate: total_deaths is deaths
+    nest:
+      by_state_shape_map is {
+        group_by: `state` is State_Name
+        aggregate: deaths_per_100k
+      }
+  }  
+
+  query: by_county_bar_chart is {
+    top: 15
+    group_by: county is CONCAT(County, ', ', State)
+    aggregate: total_deaths is deaths
+  }
+
+  query: normalized_by_county_bar_chart is {
+    top: 15
+    group_by: county is CONCAT(County, ', ', State)
+    aggregate: normalized_deaths is deaths_per_100k
+  }
+
+  query: by_year_state_county is {
+    order_by: `year` desc
+    group_by: `year` is `Year`
+    aggregate: total_deaths is deaths
+    nest: top_5_states is {
+      top: 5
+      group_by: `state` is State_Name
+      aggregate: deaths_per_100k
+      nest: top_10_counties is {
+        top: 10
+        group_by: county is County
+        aggregate: deaths_per_100k
+      }
+    }
+  }
+  
+}

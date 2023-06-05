@@ -1,0 +1,67 @@
+-- Country names are not always present or consistent across files. Need to use this file.
+sql: school_country_sql is  {
+  connection: "duckdb"
+  select: """
+    SELECT *
+    FROM read_csv_auto('school_and_country_table.csv', header=TRUE)
+  """
+}
+source: school_country_map is from_sql(school_country_sql) {
+  primary_key: school_name
+}
+
+-- Each ranking has multiple years' rankings - so we can average across the years to compare.
+sql: sh_ranking_sql is {
+  connection: "duckdb"
+  select: """
+    SELECT
+      -- Some rankings are a range (e.g., 201-205). We extract the lowest for measurements.
+      CAST(regexp_extract(world_rank, '^[0-9]+') AS INTEGER) AS world_rank,
+      university_name,
+      CAST(regexp_extract(national_rank, '^[0-9]+') AS INTEGER) AS national_rank,
+      year
+    FROM read_csv('shanghaiData.csv', header=TRUE, all_varchar=FALSE,
+      columns={
+        'world_rank' : 'VARCHAR',
+        'university_name' : 'VARCHAR',
+        'national_rank' : 'VARCHAR',
+        'total_score' : 'DOUBLE',
+        'alumni' : 'DOUBLE',
+        'award' : 'DOUBLE',
+        'hici' : 'DOUBLE',
+        'ns' : 'DOUBLE',
+        'pub' : 'DOUBLE',
+        'pcp' : 'DOUBLE',
+        'year' : 'INTEGER',
+      }
+    )
+  """
+}
+
+source: sh_ranking is from_sql(sh_ranking_sql) {
+  measure: avg_ranking is avg(world_rank)
+  measure: school_count is count(distinct university_name)
+  join_one: school_country_map with university_name
+
+  -- School names are unfortunately not consistent; would need to do a clean-up.
+  query: sh_school_avg is {
+    top: 20
+    order_by: avg_ranking
+    group_by: school_name is university_name
+    aggregate: avg_ranking
+  }
+
+  query: sh_country_school_avg is {
+    order_by: avg_ranking
+    group_by: country_name is school_country_map.country
+    aggregate: avg_ranking
+    aggregate: school_count
+    nest:
+      by_school is {
+        top: 5
+        order_by: avg_ranking
+        group_by: school_name is university_name
+        aggregate: avg_ranking
+    }
+  }
+}
